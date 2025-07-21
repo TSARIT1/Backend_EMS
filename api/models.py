@@ -41,24 +41,47 @@ class AddStudents(models.Model):
     parent_email = models.CharField(max_length=255,blank=True,null=True)
     additional_info = models.CharField(max_length=255,blank=True,null=True)
 
+
+
 class Teachers(models.Model):
-    select_employee_type = models.CharField(max_length=255,blank=True,null=True)
-    teacher_id = models.CharField(max_length=255,blank=True,null=True)
-    first_name = models.CharField(max_length=255,blank=True,null=True)
-    last_name = models.CharField(max_length=255,blank=True,null=True)
-    contact_number = models.CharField(max_length=255,blank=True,null=True)
-    email = models.CharField(max_length=255,blank=True,null=True)
-    date = models.CharField(max_length=255,blank=True,null=True)
-    select_gender = models.CharField(max_length=255,blank=True,null=True)
-    blood_group = models.CharField(max_length=255,blank=True,null=True)
-    address = models.CharField(max_length=255,blank=True,null=True)
-    zipcode = models.CharField(max_length=255,blank=True,null=True)
-    state = models.CharField(max_length=255,blank=True,null=True)
-    country = models.CharField(max_length=255,blank=True,null=True)
-    profile_summary = models.CharField(max_length=255,blank=True,null=True)
-    skills = models.CharField(max_length=255,blank=True,null=True)
-    facebook_profile_link = models.CharField(max_length=255,blank=True,null=True)
-    linkedin_Profile_link = models.CharField(max_length=255,blank=True,null=True)  
+    
+    
+    
+    
+    BLOOD_GROUP_CHOICES = [
+        ('A+', 'A+'),
+        ('A-', 'A-'),
+        ('B+', 'B+'),
+        ('B-', 'B-'),
+        ('AB+', 'AB+'),
+        ('AB-', 'AB-'),
+        ('O+', 'O+'),
+        ('O-', 'O-'),
+    ]
+
+    employee_type = models.CharField(max_length=20,blank=True,null=True)
+    teacher_id = models.CharField(max_length=20, unique=True)
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    contact_phone = models.CharField(max_length=20)
+    email = models.EmailField(unique=True)
+    date_of_birth = models.DateField()
+    gender = models.CharField(max_length=10, blank=True, null=True)
+    profile_picture = models.ImageField(upload_to='teacher_profiles/', blank=True, null=True)
+    blood_group = models.CharField(max_length=3, choices=BLOOD_GROUP_CHOICES, blank=True, null=True)
+    address = models.TextField(blank=True, null=True)
+    zip_code = models.CharField(max_length=20, blank=True, null=True)
+    state = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=100, blank=True, null=True)
+    profile_summary = models.TextField(blank=True, null=True)
+    skills = models.TextField(blank=True, null=True)
+    facebook_profile = models.URLField(blank=True, null=True)
+    linkedin_profile = models.URLField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name} ({self.teacher_id})"
 
 
 class Books(models.Model):
@@ -92,16 +115,41 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields) 
 
 class User(AbstractUser):
+    ADMIN = "admin"
+    TEACHER = 'teacher'
+    STUDENT = 'student'
+
+    ROLE_CHOICES = [
+        (ADMIN,'admin'),
+        (TEACHER,'teacher'),
+        (STUDENT,'student')
+    ]
     email = models.EmailField(unique=True)
     phone_no = models.CharField(max_length=225,null=True,blank=True)
     username = None
     otp = models.CharField(max_length=6,null=True,blank=True)
     is_verified = models.BooleanField(default=False)
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['phone_no']
+    role = models.CharField(max_length=100,choices=ROLE_CHOICES,default=STUDENT)
 
-    objects = CustomUserManager()                   
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = []
+
+    objects = CustomUserManager() 
+
+    def __str__(self):
+        return f"{self.email} ({self.user})"
+
+    def is_admin(self):
+        return self.role == self.ADMIN or self.is_superuser
+
+    def is_teacher(self):
+        return self.role == self.TEACHER
+
+    def is_student(self):
+        return self.role == self.STUDENT              
+
+
 
 
     

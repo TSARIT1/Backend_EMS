@@ -5,10 +5,11 @@ from .views import *
 
 rt = DefaultRouter()
 rt.register(r'classes',SubjectAndClassView)
-rt.register(r'section',SectionView, basename="section-data")
-rt.register(r'subject',SubjectView,basename="subject-data")
+rt.register(r'sections',SectionView, basename="section-data")
+rt.register(r'subjects',SubjectView,basename="subject-data")
 rt.register(r'addstudents',AddStudentsView,basename="student-data")
-rt.register(r'teachers',TeachersView,basename="teachers")
+rt.register(r'teachers', TeacherViewSet, basename='teacher')
+
 rt.register(r'books',BooksView,basename="books")
 
 urlpatterns = [

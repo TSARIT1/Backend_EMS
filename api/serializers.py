@@ -21,10 +21,32 @@ class  AddStudentsSerializer(serializers.ModelSerializer):
         model = AddStudents
         fields = '__all__'
 
-class  TeachersSerializer(serializers.ModelSerializer):
+from rest_framework import serializers
+from .models import Teachers
+
+class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
         model = Teachers
-        fields = '__all__'   
+        fields = '__all__'
+        extra_kwargs = {
+            'profile_picture': {'required': False},
+            'teacher_id': {'read_only': False, 'required': True},
+            'email': {'required': True},
+        }
+
+    def validate_teacher_id(self, value):
+        instance = getattr(self, 'instance', None)
+        if instance and instance.teacher_id != value:
+            if Teachers.objects.filter(teacher_id=value).exists():
+                raise serializers.ValidationError("Teacher with this ID already exists.")
+        return value
+
+    def validate_email(self, value):
+        instance = getattr(self, 'instance', None)
+        if instance and instance.email != value:
+            if Teachers.objects.filter(email=value).exists():
+                raise serializers.ValidationError("Teacher with this email already exists.")
+        return value   
 
 class BooksSerializer(serializers.ModelSerializer):
     class Meta:
@@ -34,7 +56,7 @@ class BooksSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['first_name','last_name','email','phone_no','password','otp']
+        fields = ['first_name','last_name','email','phone_no','password','role']
         extra_kwargs = {'password':{'write_only':True}}
 
     def create(self, validated_data):
