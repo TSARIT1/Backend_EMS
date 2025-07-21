@@ -16,37 +16,46 @@ class SubjectSerializer(serializers.ModelSerializer):
         model = Subject
         fields = '__all__'  
 
+import random
+import string
+
+def generate_password(length=6):
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choices(chars, k=length))
+
 class  AddStudentsSerializer(serializers.ModelSerializer):
     class Meta:
         model = AddStudents
         fields = '__all__'
+        extra_kwargs = {
+            'password': {'read_only': True}
+        }
+    def create(self,validated_data):
+        validated_data['password'] = generate_password()
+        return super().create(validated_data)    
 
 from rest_framework import serializers
 from .models import Teachers
+
+
+
+def generate_password_teacher(length=8):
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choices(chars, k=length))
 
 class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
         model = Teachers
         fields = '__all__'
         extra_kwargs = {
-            'profile_picture': {'required': False},
-            'teacher_id': {'read_only': False, 'required': True},
-            'email': {'required': True},
+            'password': {'read_only': True}
         }
+    def create(self,validated_data):
+        validated_data['password'] = generate_password_teacher()
+        return super().create(validated_data) 
+       
 
-    def validate_teacher_id(self, value):
-        instance = getattr(self, 'instance', None)
-        if instance and instance.teacher_id != value:
-            if Teachers.objects.filter(teacher_id=value).exists():
-                raise serializers.ValidationError("Teacher with this ID already exists.")
-        return value
-
-    def validate_email(self, value):
-        instance = getattr(self, 'instance', None)
-        if instance and instance.email != value:
-            if Teachers.objects.filter(email=value).exists():
-                raise serializers.ValidationError("Teacher with this email already exists.")
-        return value   
+       
 
 class BooksSerializer(serializers.ModelSerializer):
     class Meta:
