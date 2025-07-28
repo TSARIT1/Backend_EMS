@@ -20,6 +20,8 @@ class Subject(models.Model):
     subject_credit= models.CharField(max_length=255,blank=True,null=True)
     subject_type = models.CharField(max_length=255,blank=True,null=True) 
 
+from django.contrib.auth.hashers import make_password,check_password    
+
 class AddStudents(models.Model):
     first_name = models.CharField(max_length=255,blank=True,null=True)
     last_name = models.CharField(max_length=255,blank=True,null=True)
@@ -41,6 +43,16 @@ class AddStudents(models.Model):
     parent_email = models.CharField(max_length=255,blank=True,null=True)
     additional_info = models.CharField(max_length=255,blank=True,null=True)
     password = models.CharField(max_length=16, blank=True, null=True)
+
+    def set_password(self,raw_password):
+        self.password = make_password(raw_password)
+
+    def check_password(self,raw_password):
+        return check_password(raw_password,self.password)
+
+    @property
+    def is_authenticated(self):
+        return True
 
 
 
@@ -83,8 +95,21 @@ class Teachers(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     password = models.CharField(max_length=16, blank=True, null=True)
 
+
+            
+
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.teacher_id})"
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+        
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
+    
+    @property
+    def is_authenticated(self):
+        return True    
 
 
 class Books(models.Model):
@@ -150,7 +175,9 @@ class User(AbstractUser):
         return self.role == self.TEACHER
 
     def is_student(self):
-        return self.role == self.STUDENT              
+        return self.role == self.STUDENT 
+        
+                     
 
 
 

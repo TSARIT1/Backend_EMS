@@ -10,9 +10,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.core.mail import send_mail
 import random
 from django.conf import settings
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated,AllowAny
+from django.core.mail import send_mail
+from django.conf import settings
 
 from django.contrib.auth import get_user_model
 User = get_user_model()
+
 
 '''class RegisterView(APIView):
     def post(self,request):
@@ -52,55 +57,14 @@ class SubjectView(ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
 
+def generate_password(length=6):
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choices(chars,k=length))
+
 class AddStudentsView(ModelViewSet):
     queryset = AddStudents.objects.all()
     serializer_class = AddStudentsSerializer   
-
-from rest_framework import viewsets, status
-from rest_framework.response import Response
-from rest_framework.decorators import action
-from .models import Teachers
-from .serializers import TeacherSerializer
-from django.shortcuts import get_object_or_404
-
-class TeacherViewSet(viewsets.ModelViewSet):
-    queryset = Teachers.objects.all().order_by('-created_at')
-    serializer_class = TeacherSerializer
-    lookup_field = 'id'
-
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        # Add any filtering here if needed
-        return queryset
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def search(self, request):
-        query = request.query_params.get('q', '')
-        if query:
-            queryset = self.get_queryset().filter(
-                models.Q(first_name__icontains=query) |
-                models.Q(last_name__icontains=query) |
-                models.Q(teacher_id__icontains=query) |
-                models.Q(email__icontains=query)
-            )
-            serializer = self.get_serializer(queryset, many=True)
-            return Response(serializer.data)
-        return Response([])  
+ 
 
 class BooksView(ModelViewSet):
     queryset = Books.objects.all()
@@ -224,7 +188,171 @@ class ResendOtpView(APIView):
                 return Response({"message":"OTP has been resend success.!!!"},status=200)
             except User.DoesNotExist:
                 return Response({"error": "User with this email does not exist."},status=400)
-        return Response(serializer.errors,status=400)                                           
+        return Response(serializer.errors,status=400) 
+
+from django.core.mail import send_mail
+from django.conf import settings        
+
+def send_welcome_email(email, password):
+    subject = 'Your Student Account Credentials'
+    message = f'''
+    Welcome to our system!
+
+    Your login credentials are:
+    Email: {email}
+    Password: {password}
+
+    Please change your password after first login.
+    '''
+    send_mail(
+        subject,
+        message,
+        settings.DeFAULT_FORM_EMAIL,
+        [email],
+        fail_silently=False,
+
+    )
+
+class AddStudentsView(ModelViewSet):
+    permission_classes = [AllowAny]
+    queryset = AddStudents.objects.all()
+    serializer_class = AddStudentsSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        password = generate_password()
+        print("password :",password)
+        student = serializer.save()
+        student.set_password(password)
+        student.save()
+        
+        
+        #send_welcome_email(student.email, password)
+        
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            serializer.data, 
+            status=status.HTTP_201_CREATED, 
+            headers=headers
+        )
+    
+
+from rest_framework.authentication import BaseAuthentication
+import jwt
+from rest_framework import exceptions
+
+
+
+class JWTAuthentication(BaseAuthentication):
+    def authenticate(self, request):
+        header = request.headers.get('Authorization')
+        if not header or not header.startswith('Bearer '):
+            return None
+
+        token = header.split()[1]
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        except (jwt.InvalidTokenError, jwt.ExpiredSignatureError):
+            raise exceptions.AuthenticationFailed("Invalid or expired token")
+
+        try:
+            user = AddStudents.objects.get(id=payload.get('user_id'))
+        except AddStudents.DoesNotExist:
+            raise exceptions.AuthenticationFailed("User not found")
+
+        return (user, None)
+
+class StudentLoginView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"detail": "Invalid credentials"}, status=401)
+
+        student = serializer.validated_data['student']
+        refresh = RefreshToken.for_user(student)
+        refresh['user_id'] = student.id
+
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'student': AddStudentsSerializer(student).data
+        }, status=200)
+
+class ChangePasswordView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        student = request.user
+
+        serializer = ChangePasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        if not student.check_password(serializer.validated_data['old_password']):
+            return Response({'detail': 'Incorrect old password'}, status=400)
+
+        student.set_password(serializer.validated_data['new_password'])
+        student.save()
+
+        return Response({'message': 'Password updated successfully'}, status=200)
+
+
+
+from rest_framework.permissions import IsAuthenticated,AllowAny
+
+class TeacherViewSet(ModelViewSet):
+    permission_classes = [AllowAny]
+    queryset = Teachers.objects.all()
+    serializer_class = TeacherSerializer
+
+class TeacherLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = TeacherLoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({"detail": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+        teacher = serializer.validated_data['teacher']
+        refresh = RefreshToken.for_user(teacher)
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'teacher': TeacherSerializer(teacher).data
+        }) 
+
+class TeacherChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            teacher = Teachers.objects.get(pk=request.user.id)
+        except Teachers.DoesNotExist:
+            return Response(
+                {"detail": "Teacher not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = TeacherChangePasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if not teacher.check_password(serializer.data['old_password']):
+            return Response(
+                {"detail": "Incorrect old password"},
+                status=status.HTTP_400_BAD_REQUEST
+            ) 
+
+        teacher.set_password(serializer.data['new_password'])
+        teacher.save()
+
+        return Response(
+            {"message": "Password updated successfully"},
+            status=status.HTTP_200_OK
+        )             
 
 
 
