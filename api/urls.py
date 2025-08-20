@@ -12,6 +12,12 @@ rt.register(r'teachers', TeacherViewSet, basename='teacher')
 rt.register(f'students', AddStudentsView,basename='students')
 
 rt.register(r'books',BooksView,basename="books")
+rt.register(r'email-campaigns', EmailCampaignViewSet, basename='emailcampaign')
+rt.register(r'events', EventViewSet, basename='events')
+rt.register(r'schedule', ScheduleCategoryViewSet, basename='schedule')
+rt.register(r'fees-invoice', FeesAndInvoicesViewSet, basename='fees&invoice') 
+rt.register(r'manageOrg',ManageOrgInfoViewSet,basename='manageOrg')
+rt.register(r'terminology',TerminologyViewSet,basename='terminology')
 
 urlpatterns = [
     path('',include(rt.urls)),
@@ -27,6 +33,7 @@ urlpatterns = [
     
     path('teacherss/login/', TeacherLoginView.as_view(), name='teacher-login'),
     path('teacherss/change-password/', TeacherChangePasswordView.as_view(), name='teacher-change-password'),
+    
    
     
 ]

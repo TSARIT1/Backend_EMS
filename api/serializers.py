@@ -168,4 +168,69 @@ class TeacherChangePasswordSerializer(serializers.Serializer):
     def validate(self, data):
         if data['new_password'] != data['confirm_password']:
             raise serializers.ValidationError("Passwords don't match")
-        return data                                                  
+        return data
+
+from rest_framework import serializers
+from .models import EmailCampaign, AddStudents, Teachers
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+
+class EmailCampaignSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmailCampaign
+        fields = '__all__'
+        extra_kwargs = {
+            'sent_at': {'read_only': True},
+        }
+
+    def validate(self, data):
+        if data.get('recipient_type') == 'selected':
+            if not data.get('selected_students') and not data.get('selected_teachers'):
+                raise serializers.ValidationError("For 'selected' recipient type, you must select at least one student or teacher.")
+        return data
+
+class SimpleStudentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AddStudents
+        fields = ['id', 'first_name', 'last_name', 'email','parent_email','father_name','mother_name','admission_no']
+
+class SimpleTeacherSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Teachers
+        fields = ['id', 'first_name', 'last_name', 'email']                                                          
+
+
+class EventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Event
+        fields = '__all__'
+        extra_kwargs = {
+            'last_sent': {'read_only': True},
+            'created_at': {'read_only': True}
+        }
+
+    def validate(self, data):
+        if data['start_date'] > data['end_date']:
+            raise serializers.ValidationError("End date must be after start date")
+        return data
+
+class ScheduleCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScheduleCategory
+        fields = '__all__'    
+
+
+class FeesAndInvoiceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FeesAndInvoices
+        fields = '__all__'
+
+class ManageOrgInfoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ManageOrgInfo
+        fields = '__all__'
+
+class TerminologySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Terminology
+        fields = '__all__'

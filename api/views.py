@@ -352,7 +352,216 @@ class TeacherChangePasswordView(APIView):
         return Response(
             {"message": "Password updated successfully"},
             status=status.HTTP_200_OK
-        )             
+        )  
+
+from rest_framework import viewsets, status
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import EmailCampaign, AddStudents, Teachers
+from .serializers import EmailCampaignSerializer, SimpleStudentSerializer, SimpleTeacherSerializer
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+from rest_framework import permissions
+
+class EmailCampaignViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.AllowAny]
+    queryset = EmailCampaign.objects.all().order_by('-created_at')
+    serializer_class = EmailCampaignSerializer
+
+    @action(detail=True, methods=['post'])
+    def send(self, request, pk=None):
+        campaign = self.get_object()
+        try:
+            success = self.send_campaign_emails(campaign)
+            if success:
+                return Response({'status': 'emails sent successfully'}, status=status.HTTP_200_OK)
+            return Response({'status': 'no valid recipients found'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def send_campaign_emails(self, campaign):
+        subject = campaign.title
+        message = campaign.description
+        from_email = settings.EMAIL_HOST_USER
+        recipient_list = []
+
+        # Get recipients based on campaign type
+        if campaign.recipient_type == 'students':
+            students = AddStudents.objects.exclude(email__isnull=True).exclude(email__exact='')
+            recipient_list.extend([student.email for student in students if self.is_valid_email(student.email)])
+        
+        elif campaign.recipient_type == 'teachers':
+            teachers = Teachers.objects.all()
+            recipient_list.extend([teacher.email for teacher in teachers])
+        
+        elif campaign.recipient_type == 'both':
+            students = AddStudents.objects.exclude(email__isnull=True).exclude(email__exact='')
+            teachers = Teachers.objects.all()
+            recipient_list.extend([student.email for student in students if self.is_valid_email(student.email)])
+            recipient_list.extend([teacher.email for teacher in teachers])
+        
+        elif campaign.recipient_type == 'selected':
+            selected_students = campaign.selected_students.exclude(email__isnull=True).exclude(email__exact='')
+            selected_teachers = campaign.selected_teachers.all()
+            recipient_list.extend([student.email for student in selected_students if self.is_valid_email(student.email)])
+            recipient_list.extend([teacher.email for teacher in selected_teachers])
+
+        # Remove duplicates and send
+        recipient_list = list(set(filter(None, recipient_list)))
+        
+        if recipient_list:
+            send_mail(
+                subject,
+                message,
+                from_email,
+                recipient_list,
+                fail_silently=False,
+            )
+            campaign.sent_at = timezone.now()
+            campaign.save()
+            return True
+        return False
+
+    def is_valid_email(self, email):
+        try:
+            validate_email(email)
+            return True
+        except ValidationError:
+            return False
+
+    @action(detail=False, methods=['get'])
+    def recipient_options(self, request):
+        students = AddStudents.objects.exclude(email__isnull=True).exclude(email__exact='')
+        teachers = Teachers.objects.all()
+        
+        student_serializer = SimpleStudentSerializer(students, many=True)
+        teacher_serializer = SimpleTeacherSerializer(teachers, many=True)
+        
+        return Response({
+            'students': student_serializer.data,
+            'teachers': teacher_serializer.data
+        })
+
+from rest_framework import viewsets, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from django.core.mail import send_mail
+from django.conf import settings
+from .models import Event, Teachers, AddStudents
+from .serializers import EventSerializer
+from django.utils import timezone
+
+class EventViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.AllowAny]
+    
+    queryset = Event.objects.all().order_by('-start_date')
+    serializer_class = EventSerializer
+
+    @action(detail=True, methods=['post'])
+    def send(self, request, pk=None):
+        event = self.get_object()
+        try:
+            self.send_event_notification(event)
+            return Response({'status': 'event notifications sent'}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def send_event_notification(self, event):
+        subject = f"Event Notification: {event.title}"
+        
+        message = f"""
+        {event.description}
+        
+        Date: {event.start_date.strftime('%A, %B %d, %Y')}
+        Time: {event.start_date.strftime('%I:%M %p')} to {event.end_date.strftime('%I:%M %p')}
+        Location: {event.location}
+        Event Type: {event.event_type}
+        
+        {'(Recurring: ' + event.get_frequency_display() + ')' if event.frequency != 'once' else ''}
+        """
+        
+        recipient_list = []
+        
+        if event.visibility == 'all':
+            teachers = Teachers.objects.all()
+            students = AddStudents.objects.exclude(email__isnull=True).exclude(email__exact='')
+            recipient_list.extend([t.email for t in teachers])
+            recipient_list.extend([s.email for s in students])
+            
+        elif event.visibility == 'teachers_only':
+            teachers = Teachers.objects.all()
+            recipient_list.extend([t.email for t in teachers])
+            
+        elif event.visibility == 'students_only':
+            students = AddStudents.objects.exclude(email__isnull=True).exclude(email__exact='')
+            recipient_list.extend([s.email for s in students])
+            
+        elif event.visibility == 'students_parents':
+            students = AddStudents.objects.exclude(email__isnull=True).exclude(email__exact='')
+            recipient_list.extend([s.email for s in students])
+            # Add parent emails where available
+            recipient_list.extend([
+                s.parent_email for s in students 
+                if s.parent_email and s.parent_email.strip()
+            ])
+            
+        elif event.visibility == 'custom':
+            teachers = event.visible_to_teachers.all()
+            students = event.visible_to_students.exclude(email__isnull=True).exclude(email__exact='')
+            recipient_list.extend([t.email for t in teachers])
+            recipient_list.extend([s.email for s in students])
+            # Include parent emails for selected students
+            recipient_list.extend([
+                s.parent_email for s in students 
+                if s.parent_email and s.parent_email.strip()
+            ])
+        
+        # Remove duplicates and empty emails
+        recipient_list = list(set(filter(None, recipient_list)))
+        
+        if recipient_list:
+            send_mail(
+                subject,
+                message,
+                settings.DEFAULT_FROM_EMAIL,
+                recipient_list,
+                fail_silently=False,
+            )
+            event.last_sent = timezone.now()
+            event.save()
+
+    @action(detail=False, methods=['get'])
+    def upcoming(self, request):
+        now = timezone.now()
+        upcoming_events = Event.objects.filter(
+            start_date__gte=now,
+            start_date__lte=now + timezone.timedelta(days=30)
+        ).order_by('start_date')
+        serializer = self.get_serializer(upcoming_events, many=True)
+        return Response(serializer.data)
+
+class ScheduleCategoryViewSet(viewsets.ModelViewSet):
+    queryset = ScheduleCategory.objects.all().order_by('-start_date')
+    serializer_class = ScheduleCategorySerializer
+    permission_classes = [permissions.AllowAny]  
+
+
+class FeesAndInvoicesViewSet(viewsets.ModelViewSet):
+    queryset = FeesAndInvoices.objects.all()
+    serializer_class = FeesAndInvoiceSerializer
+    permission_classes = [permissions.AllowAny]
+                               
+class ManageOrgInfoViewSet(viewsets.ModelViewSet):
+    queryset = ManageOrgInfo.objects.all()
+    serializer_class = ManageOrgInfoSerializer
+    permission_classes = [permissions.AllowAny]
+
+class TerminologyViewSet(viewsets.ModelViewSet):
+    queryset =Terminology.objects.all()
+    serializer_class = TerminologySerializer
+    permission_classes = [permissions.AllowAny]
 
 
 
